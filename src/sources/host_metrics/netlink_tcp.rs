@@ -1,7 +1,5 @@
-use crate::sources::host_metrics::HostMetricsScrapeDetailError;
 use byteorder::{ByteOrder, NativeEndian};
 use std::{collections::HashMap, io, path::Path};
-use vector_lib::event::MetricTags;
 
 use netlink_packet_core::{
     NetlinkHeader, NetlinkMessage, NetlinkPayload, NLM_F_ACK, NLM_F_DUMP, NLM_F_REQUEST,
@@ -16,49 +14,10 @@ use netlink_sys::{
 };
 use snafu::{ResultExt, Snafu};
 
-use super::HostMetrics;
-
 const PROC_IPV6_FILE: &str = "/proc/net/if_inet6";
-const TCP_CONNS_TOTAL: &str = "tcp_connections_total";
-const TCP_TX_QUEUED_BYTES_TOTAL: &str = "tcp_tx_queued_bytes_total";
-const TCP_RX_QUEUED_BYTES_TOTAL: &str = "tcp_rx_queued_bytes_total";
-const STATE: &str = "state";
-
-impl HostMetrics {
-    pub async fn tcp_metrics(&self, output: &mut super::MetricsBuffer) {
-        match build_tcp_stats().await {
-            Ok(stats) => {
-                output.name = "tcp";
-                for (state, count) in stats.conn_states {
-                    let tags = metric_tags! {
-                        STATE => state
-                    };
-                    output.gauge(TCP_CONNS_TOTAL, count, tags);
-                }
-
-                output.gauge(
-                    TCP_TX_QUEUED_BYTES_TOTAL,
-                    stats.tx_queued_bytes,
-                    MetricTags::default(),
-                );
-                output.gauge(
-                    TCP_RX_QUEUED_BYTES_TOTAL,
-                    stats.rx_queued_bytes,
-                    MetricTags::default(),
-                );
-            }
-            Err(error) => {
-                emit!(HostMetricsScrapeDetailError {
-                    message: "Failed to load tcp connection info.",
-                    error,
-                });
-            }
-        }
-    }
-}
 
 #[derive(Debug, Snafu)]
-enum TcpError {
+pub enum TcpError {
     #[snafu(display("Could not open new netlink socket"))]
     NetlinkSocket { source: io::Error },
     #[snafu(display("Could not send netlink message"))]
@@ -74,7 +33,8 @@ enum TcpError {
 }
 
 #[repr(u8)]
-enum TcpState {
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum TcpState {
     Established = 1,
     SynSent = 2,
     SynRecv = 3,
@@ -88,8 +48,8 @@ enum TcpState {
     Closing = 11,
 }
 
-impl From<TcpState> for String {
-    fn from(val: TcpState) -> Self {
+impl From<&TcpState> for String {
+    fn from(val: &TcpState) -> Self {
         match val {
             TcpState::Established => "established".into(),
             TcpState::SynSent => "syn_sent".into(),
@@ -128,10 +88,37 @@ impl TryFrom<u8> for TcpState {
 }
 
 #[derive(Debug, Default)]
-struct TcpStats {
-    conn_states: HashMap<String, f64>,
-    rx_queued_bytes: f64,
-    tx_queued_bytes: f64,
+pub struct TcpStats {
+    conn_states: HashMap<TcpState, u32>,
+    rx_queued_bytes: u32,
+    tx_queued_bytes: u32,
+}
+
+impl TcpStats {
+    pub const fn conn_states(&self) -> &HashMap<TcpState, u32> {
+        &self.conn_states
+    }
+
+    pub const fn rx_queued_bytes(&self) -> u32 {
+        self.rx_queued_bytes
+    }
+
+    pub const fn tx_queued_bytes(&self) -> u32 {
+        self.tx_queued_bytes
+    }
+}
+
+pub async fn build_tcp_stats() -> Result<TcpStats, TcpError> {
+    let mut tcp_stats = TcpStats::default();
+    let resp = fetch_nl_inet_hdrs(AF_INET).await?;
+    parse_nl_inet_hdrs(resp, &mut tcp_stats)?;
+
+    if is_ipv6_enabled() {
+        let resp = fetch_nl_inet_hdrs(AF_INET6).await?;
+        parse_nl_inet_hdrs(resp, &mut tcp_stats)?;
+    }
+
+    Ok(tcp_stats)
 }
 
 async fn fetch_nl_inet_hdrs(addr_family: u8) -> Result<Vec<InetResponseHeader>, TcpError> {
@@ -203,26 +190,12 @@ fn parse_nl_inet_hdrs(
 ) -> Result<(), TcpError> {
     for hdr in hdrs {
         let state: TcpState = hdr.state.try_into()?;
-        let state_str: String = state.into();
-        *tcp_stats.conn_states.entry(state_str).or_insert(0.0) += 1.0;
-        tcp_stats.tx_queued_bytes += f64::from(hdr.send_queue);
-        tcp_stats.rx_queued_bytes += f64::from(hdr.recv_queue)
+        *tcp_stats.conn_states.entry(state).or_insert(0) += 1;
+        tcp_stats.tx_queued_bytes += hdr.send_queue;
+        tcp_stats.rx_queued_bytes += hdr.recv_queue;
     }
 
     Ok(())
-}
-
-async fn build_tcp_stats() -> Result<TcpStats, TcpError> {
-    let mut tcp_stats = TcpStats::default();
-    let resp = fetch_nl_inet_hdrs(AF_INET).await?;
-    parse_nl_inet_hdrs(resp, &mut tcp_stats)?;
-
-    if is_ipv6_enabled() {
-        let resp = fetch_nl_inet_hdrs(AF_INET6).await?;
-        parse_nl_inet_hdrs(resp, &mut tcp_stats)?;
-    }
-
-    Ok(tcp_stats)
 }
 
 fn is_ipv6_enabled() -> bool {
@@ -238,12 +211,7 @@ mod tests {
         AF_INET,
     };
 
-    use crate::sources::host_metrics::{HostMetrics, HostMetricsConfig, MetricsBuffer};
-
-    use super::{
-        fetch_nl_inet_hdrs, parse_nl_inet_hdrs, TcpStats, STATE, TCP_CONNS_TOTAL,
-        TCP_RX_QUEUED_BYTES_TOTAL, TCP_TX_QUEUED_BYTES_TOTAL,
-    };
+    use super::{fetch_nl_inet_hdrs, parse_nl_inet_hdrs, TcpState, TcpStats};
 
     #[test]
     fn parses_nl_inet_hdrs() {
@@ -265,12 +233,15 @@ mod tests {
         let mut tcp_stats = TcpStats::default();
         parse_nl_inet_hdrs(hdrs, &mut tcp_stats).unwrap();
 
-        assert_eq!(tcp_stats.tx_queued_bytes, 15.0);
-        assert_eq!(tcp_stats.rx_queued_bytes, 9.0);
+        assert_eq!(tcp_stats.tx_queued_bytes, 15);
+        assert_eq!(tcp_stats.rx_queued_bytes, 9);
         assert_eq!(tcp_stats.conn_states.len(), 3);
-        assert_eq!(*tcp_stats.conn_states.get("established").unwrap(), 1.0);
-        assert_eq!(*tcp_stats.conn_states.get("syn_sent").unwrap(), 1.0);
-        assert_eq!(*tcp_stats.conn_states.get("syn_recv").unwrap(), 1.0);
+        assert_eq!(
+            *tcp_stats.conn_states.get(&TcpState::Established).unwrap(),
+            1
+        );
+        assert_eq!(*tcp_stats.conn_states.get(&TcpState::SynSent).unwrap(), 1);
+        assert_eq!(*tcp_stats.conn_states.get(&TcpState::SynRecv).unwrap(), 1);
     }
 
     #[tokio::test]
@@ -303,45 +274,5 @@ mod tests {
         }
         assert_eq!(source, true);
         assert_eq!(dst, true);
-    }
-
-    #[tokio::test]
-    async fn generates_tcp_metrics() {
-        let _listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-
-        let mut buffer = MetricsBuffer::new(None);
-        HostMetrics::new(HostMetricsConfig::default())
-            .tcp_metrics(&mut buffer)
-            .await;
-        let metrics = buffer.metrics;
-
-        assert!(!metrics.is_empty());
-
-        let mut n_tx_queued_bytes_metric = 0;
-        let mut n_rx_queued_bytes_metric = 0;
-
-        for metric in metrics {
-            if metric.name() == TCP_CONNS_TOTAL {
-                let tags = metric.tags();
-                assert!(
-                    tags.is_some(),
-                    "Metric tcp_connections_total must have a tag"
-                );
-                let tags = tags.unwrap();
-                assert!(
-                    tags.contains_key(STATE),
-                    "Metric tcp_connections_total must have a mode tag"
-                );
-            } else if metric.name() == TCP_TX_QUEUED_BYTES_TOTAL {
-                n_tx_queued_bytes_metric += 1;
-            } else if metric.name() == TCP_RX_QUEUED_BYTES_TOTAL {
-                n_rx_queued_bytes_metric += 1;
-            } else {
-                panic!("unrecognized metric name");
-            }
-        }
-
-        assert_eq!(n_tx_queued_bytes_metric, 1);
-        assert_eq!(n_rx_queued_bytes_metric, 1);
     }
 }
