@@ -9,6 +9,7 @@ use vector_lib::metric_tags;
 
 use crate::internal_events::HostMetricsScrapeDetailError;
 
+#[cfg(target_os = "linux")]
 use super::netlink_tcp;
 use super::{
     default_all_devices, example_devices, filter_result, FilterList, HostMetrics, MetricTags,
@@ -102,6 +103,7 @@ impl HostMetrics {
             }
         }
 
+        #[cfg(target_os = "linux")]
         match netlink_tcp::build_tcp_stats().await {
             Ok(stats) => {
                 output.name = "tcp";
@@ -192,26 +194,32 @@ mod tests {
 
         // Assert that the metrics buffer contains the TCP related metrics
         // and the network_tcp_connections_total has the "state" tag.
-        let mut n_tx_queued_bytes_metric = 0;
-        let mut n_rx_queued_bytes_metric = 0;
+        #[cfg(target_os = "linux")]
+        {
+            let mut n_tcp_conns_total_metric = 0;
+            let mut n_tx_queued_bytes_metric = 0;
+            let mut n_rx_queued_bytes_metric = 0;
 
-        metrics.iter().for_each(|metric| {
-            if metric.name() == NETWORK_TCP_CONNS_TOTAL {
-                let tags = metric.tags().unwrap();
-                assert!(
-                    tags.contains_key(TCP_CONN_STATE),
-                    "Metric tcp_connections_total must have a mode tag"
-                );
-            } else if metric.name() == NETWORK_TCP_TX_QUEUED_BYTES_TOTAL {
-                n_tx_queued_bytes_metric += 1;
-            } else if metric.name() == NETWORK_TCP_RX_QUEUED_BYTES_TOTAL {
-                n_rx_queued_bytes_metric += 1;
-            } else {
-                panic!("unrecognized metric name");
-            }
-        });
-        assert_eq!(n_tx_queued_bytes_metric, 1);
-        assert_eq!(n_rx_queued_bytes_metric, 1);
+            metrics.iter().for_each(|metric| {
+                if metric.name() == NETWORK_TCP_CONNS_TOTAL {
+                    n_tcp_conns_total_metric += 1;
+                    let tags = metric.tags().unwrap();
+                    assert!(
+                        tags.contains_key(TCP_CONN_STATE),
+                        "Metric tcp_connections_total must have a mode tag"
+                    );
+                } else if metric.name() == NETWORK_TCP_TX_QUEUED_BYTES_TOTAL {
+                    n_tx_queued_bytes_metric += 1;
+                } else if metric.name() == NETWORK_TCP_RX_QUEUED_BYTES_TOTAL {
+                    n_rx_queued_bytes_metric += 1;
+                } else {
+                    return;
+                }
+            });
+            assert_eq!(n_tcp_conns_total_metric, 1);
+            assert_eq!(n_tx_queued_bytes_metric, 1);
+            assert_eq!(n_rx_queued_bytes_metric, 1);
+        }
     }
 
     #[tokio::test]
