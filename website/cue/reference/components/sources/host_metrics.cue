@@ -171,21 +171,19 @@ components: sources: host_metrics: {
 		network_transmit_errs_total: _host & _network_gauge & {description: "The number of errors encountered during transmits on this interface."}
 		network_transmit_packets_drop_total: _host & _network_nomac & {description: "The number of packets dropped during transmits on this interface."}
 		network_transmit_packets_total: _host & _network_nomac & {description: "The number of packets transmitted on this interface."}
-
-		// Host tcp
-		tcp_connections_total: _host & _tcp_linux & _tcp_gauge & {description: "The number of TCP connections."}
-		tcp_tx_queued_bytes_total: _host & _tcp_linux & {
+		network_tcp_connections_total: _host & _network_linux & _network_tcp_state_gauge & {description: "The number of TCP connections."}
+		network_tcp_tx_queued_bytes_total: _host & _network_linux & {
 			description: "The number of bytes in the send queue across all connections."
 			type:        "gauge"
 			tags: _host_metrics_tags & {
-				collector: examples: ["tcp"]
+				collector: examples: ["network"]
 			}
 		}
-		tcp_rx_queued_bytes_total: _host & _tcp_linux & {
+		network_tcp_rx_queued_bytes_total: _host & _network_linux & {
 			description: "The number of bytes in the receive queue across all connections."
 			type:        "gauge"
 			tags: _host_metrics_tags & {
-				collector: examples: ["tcp"]
+				collector: examples: ["network"]
 			}
 		}
 
@@ -291,11 +289,11 @@ components: sources: host_metrics: {
 			}
 		}
 
-		_tcp_linux: {relevant_when: "OS is Linux"}
-		_tcp_gauge: {
+		_network_linux: {relevant_when: "OS is Linux"}
+		_network_tcp_state_gauge: {
 			type: "gauge"
 			tags: _host_metrics_tags & {
-				collector: examples: ["tcp"]
+				collector: examples: ["network"]
 				state: {
 					description: "The connection state."
 					required: true
