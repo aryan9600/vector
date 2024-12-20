@@ -212,6 +212,21 @@ impl NetworkMetrics {
             None
         }
     }
+
+    /// Total TCP connections
+    async fn tcp_conns_total(&self) -> f64 {
+        filter_host_metric(&self.0, "tcp_connections_total")
+    }
+
+    /// Total bytes in the send queue across all connections.
+    async fn tcp_tx_queued_bytes_total(&self) -> f64 {
+        filter_host_metric(&self.0, "tcp_tx_queued_bytes_total")
+    }
+
+    /// Total bytes in the receive queue across all connections.
+    async fn tcp_rx_queued_bytes_total(&self) -> f64 {
+        filter_host_metric(&self.0, "tcp_rx_queued_bytes_total")
+    }
 }
 
 pub struct FileSystemMetrics(Vec<Metric>);
@@ -256,26 +271,6 @@ impl DiskMetrics {
     /// Total writes completed
     async fn writes_completed_total(&self) -> f64 {
         filter_host_metric(&self.0, "disk_writes_completed_total")
-    }
-}
-
-pub struct TCPMetrics(Vec<Metric>);
-
-#[Object]
-impl TCPMetrics {
-    /// Total TCP connections
-    async fn tcp_conns_total(&self) -> f64 {
-        filter_host_metric(&self.0, "tcp_connections_total")
-    }
-
-    /// Total bytes in the send queue across all connections.
-    async fn tcp_tx_queued_bytes_total(&self) -> f64 {
-        filter_host_metric(&self.0, "tcp_tx_queued_bytes_total")
-    }
-
-    /// Total bytes in the receive queue across all connections.
-    async fn tcp_rx_queued_bytes_total(&self) -> f64 {
-        filter_host_metric(&self.0, "tcp_rx_queued_bytes_total")
     }
 }
 
@@ -343,13 +338,6 @@ impl HostMetrics {
         let mut buffer = self.0.buffer();
         self.0.disk_metrics(&mut buffer).await;
         DiskMetrics(buffer.metrics)
-    }
-
-    /// TCP metrics
-    async fn tcp(&self) -> TCPMetrics {
-        let mut buffer = self.0.buffer();
-        self.0.tcp_metrics(&mut buffer).await;
-        TCPMetrics(buffer.metrics)
     }
 }
 
