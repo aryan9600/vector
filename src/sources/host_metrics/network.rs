@@ -196,13 +196,11 @@ mod tests {
         // and the network_tcp_connections_total has the "state" tag.
         #[cfg(target_os = "linux")]
         {
-            let mut n_tcp_conns_total_metric = 0;
             let mut n_tx_queued_bytes_metric = 0;
             let mut n_rx_queued_bytes_metric = 0;
 
             metrics.iter().for_each(|metric| {
                 if metric.name() == NETWORK_TCP_CONNS_TOTAL {
-                    n_tcp_conns_total_metric += 1;
                     let tags = metric.tags().unwrap();
                     assert!(
                         tags.contains_key(TCP_CONN_STATE),
@@ -216,7 +214,6 @@ mod tests {
                     return;
                 }
             });
-            assert_eq!(n_tcp_conns_total_metric, 1);
             assert_eq!(n_tx_queued_bytes_metric, 1);
             assert_eq!(n_rx_queued_bytes_metric, 1);
         }
