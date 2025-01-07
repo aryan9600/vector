@@ -9,15 +9,17 @@ use vector_lib::metric_tags;
 
 use crate::internal_events::HostMetricsScrapeDetailError;
 
+use super::{default_all_devices, example_devices, filter_result, FilterList, HostMetrics};
 #[cfg(target_os = "linux")]
-use super::netlink_tcp;
-use super::{
-    default_all_devices, example_devices, filter_result, FilterList, HostMetrics, MetricTags,
-};
+use super::{netlink_tcp, MetricTags};
 
+#[cfg(target_os = "linux")]
 const NETWORK_TCP_CONNS_TOTAL: &str = "network_tcp_connections_total";
+#[cfg(target_os = "linux")]
 const NETWORK_TCP_TX_QUEUED_BYTES_TOTAL: &str = "network_tcp_tx_queued_bytes_total";
+#[cfg(target_os = "linux")]
 const NETWORK_TCP_RX_QUEUED_BYTES_TOTAL: &str = "network_tcp_rx_queued_bytes_total";
+#[cfg(target_os = "linux")]
 const TCP_CONN_STATE: &str = "state";
 
 /// Options for the network metrics collector.
@@ -145,7 +147,12 @@ mod tests {
             tests::assert_filtered_metrics, HostMetrics, HostMetricsConfig, MetricValue,
             MetricsBuffer,
         },
-        NetworkConfig, NETWORK_TCP_CONNS_TOTAL, NETWORK_TCP_RX_QUEUED_BYTES_TOTAL,
+        NetworkConfig,
+    };
+
+    #[cfg(target_os = "linux")]
+    use super::{
+        NETWORK_TCP_CONNS_TOTAL, NETWORK_TCP_RX_QUEUED_BYTES_TOTAL,
         NETWORK_TCP_TX_QUEUED_BYTES_TOTAL, TCP_CONN_STATE,
     };
     use tokio::net::TcpListener;
