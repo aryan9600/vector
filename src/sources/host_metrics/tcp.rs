@@ -301,8 +301,8 @@ mod tests {
                 dst = true;
             }
         }
-        assert_eq!(source, true);
-        assert_eq!(dst, true);
+        assert!(source);
+        assert!(dst);
     }
 
     #[tokio::test]
