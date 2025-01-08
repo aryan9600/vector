@@ -405,6 +405,7 @@ impl HostMetrics {
         if self.config.has_collector(Collector::Network) {
             self.network_metrics(&mut buffer).await;
         }
+        #[cfg(target_os = "linux")]
         if self.config.has_collector(Collector::TCP) {
             self.tcp_metrics(&mut buffer).await;
         }

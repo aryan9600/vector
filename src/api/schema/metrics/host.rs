@@ -345,6 +345,7 @@ impl HostMetrics {
         DiskMetrics(buffer.metrics)
     }
 
+    #[cfg(target_os = "linux")]
     /// TCP metrics
     async fn tcp(&self) -> TCPMetrics {
         let mut buffer = self.0.buffer();
